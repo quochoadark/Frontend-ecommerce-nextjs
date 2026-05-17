@@ -1,6 +1,9 @@
 "use client";
 
 import { createContext, useContext, useReducer, useCallback, useEffect } from "react";
+import Cookies from "js-cookie";
+import { login as loginService, logout as logoutService } from "@/services/auth.service";
+import { getProfile } from "@/services/user.service";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -8,7 +11,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "manager" | "staff";
+  role: "ADMIN" | "USER";
   avatar?: string;
 }
 
@@ -71,39 +74,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // ─── Mock API — replace with real API calls to your Spring Boot backend ───────
 
-const MOCK_USERS: Record<string, User & { password: string }> = {
-  "admin@shop.com": {
-    id: "u1",
-    name: "Nguyễn Admin",
-    email: "admin@shop.com",
-    role: "admin",
-    password: "admin123",
-  },
-  "manager@shop.com": {
-    id: "u2",
-    name: "Trần Manager",
-    email: "manager@shop.com",
-    role: "manager",
-    password: "manager123",
-  },
-};
-
-async function mockLoginApi(
-  email: string,
-  password: string
-): Promise<User> {
-  // Simulate network latency
-  await new Promise((r) => setTimeout(r, 1000));
-
-  const found = MOCK_USERS[email];
-  if (!found || found.password !== password) {
-    throw new Error("Email hoặc mật khẩu không đúng.");
-  }
-
-  const { password: _pwd, ...user } = found;
-  void _pwd;
-  return user;
-}
+// Real API calls are now used; mock data removed.
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -112,23 +83,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Rehydrate from localStorage on mount
   useEffect(() => {
-    const saved = localStorage.getItem("auth_user");
-    if (saved) {
-      try {
-        const user: User = JSON.parse(saved);
-        dispatch({ type: "LOGIN_SUCCESS", payload: user });
-      } catch {
-        localStorage.removeItem("auth_user");
-      }
+    const token = Cookies.get('access_token');
+    if (token) {
+      // Fetch user profile using the token
+      (async () => {
+        try {
+          const profile = await getProfile();
+          const user: User = {
+            id: String(profile.id),
+            name: profile.fullName,
+            email: profile.email,
+            role: profile.role as User['role'],
+          };
+          dispatch({ type: "LOGIN_SUCCESS", payload: user });
+        } catch (e) {
+          // If fetching profile fails, clear token
+          Cookies.remove('access_token');
+        }
+      })();
     }
   }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     dispatch({ type: "LOGIN_START" });
     try {
-      const user = await mockLoginApi(email, password);
+      const authResp = await loginService({ email, password });
+      // Store access token in cookie
+      Cookies.set('access_token', authResp.accessToken, { sameSite: 'lax', path: '/' });
+      // Build User object from response
+      const user: User = {
+        id: String(authResp.userId),
+        name: authResp.fullName,
+        email: authResp.email,
+        role: authResp.role as User['role'],
+      };
       dispatch({ type: "LOGIN_SUCCESS", payload: user });
-      localStorage.setItem("auth_user", JSON.stringify(user));
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Đăng nhập thất bại.";
@@ -139,7 +128,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     dispatch({ type: "LOGOUT" });
-    localStorage.removeItem("auth_user");
+    Cookies.remove('access_token');
+    logoutService();
   }, []);
 
   const clearError = useCallback(() => {

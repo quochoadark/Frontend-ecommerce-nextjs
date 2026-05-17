@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { AuthProvider } from "@/context/AuthContext";
+import { Header } from "@/components/layout/Header";
+import { Footer } from "@/components/layout/Footer";
+import { CartDrawer } from "@/components/cart/CartDrawer";
 import "./globals.css";
 
 const inter = Inter({
@@ -25,7 +29,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body>{children}</body>
+      <body className="flex flex-col min-h-screen bg-white">
+        <AuthProvider>
+          <Header />
+          <main className="flex-grow">{children}</main>
+          <Footer />
+          <CartDrawer />
+        </AuthProvider>
+      </body>
     </html>
   );
 }
